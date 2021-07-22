@@ -61,29 +61,26 @@ fn get_to2_urls(entries: &[TO2AddressEntry]) -> Vec<String> {
 }
 
 async fn get_client_list(
-    rv_info: Vec<RendezvousInterpretedDirective>,
+    rv_entry: RendezvousInterpretedDirective,
 ) -> Result<Vec<ServiceClient>> {
-    if rv_info.is_empty() {
-        bail!("No rendezvous entries found we can construct a client for");
-    }
     let mut service_client_list = Vec::new();
-    for rv_entry in rv_info {
-        let urls = rv_entry.get_urls();
-        if urls.is_empty() {
-            continue;
-        }
-        if rv_entry.bypass {
-            todo!();
-        }
-        if rv_entry.wifi_ssid.is_some() {
-            todo!();
-        }
-        if rv_entry.user_input {
-            todo!();
-        }
-        for url in &urls {
-            service_client_list.push(fdo_http_wrapper::client::ServiceClient::new(&url));
-        }
+
+    let urls = rv_entry.get_urls();
+    // log::trace!("YOLO URLs: {:?}", urls);
+    if urls.is_empty() {
+        bail!("No URLs found in this RV_entry");
+    }
+    if rv_entry.bypass {
+        todo!();
+    }
+    if rv_entry.wifi_ssid.is_some() {
+        todo!();
+    }
+    if rv_entry.user_input {
+        todo!();
+    }
+    for url in &urls {
+        service_client_list.push(fdo_http_wrapper::client::ServiceClient::new(&url));
     }
 
     Ok(service_client_list)
@@ -93,11 +90,11 @@ async fn perform_to1(
     devcred: &dyn DeviceCredential,
     client: &mut ServiceClient,
 ) -> Result<COSESign> {
-    log::trace!(
-        "Starting TO1 with credential {:?} and client {:?}",
-        devcred,
-        client
-    );
+    // log::trace!(
+    //     "Starting TO1 with credential {:?} and client {:?}",
+    //     devcred,
+    //     client
+    // );
 
     let sig_type = DeviceSigType::StSECP384R1;
 
@@ -109,7 +106,7 @@ async fn perform_to1(
     let hello_rv_ack: RequestResult<messages::to1::HelloRVAck> =
         client.send_request(hello_rv, None).await;
     let hello_rv_ack = hello_rv_ack.context("Error sending HelloRV")?;
-    log::trace!("Hello RV ack: {:?}", hello_rv_ack);
+    // log::trace!("Hello RV ack: {:?}", hello_rv_ack);
 
     // Check ack
     let b_sig_info = hello_rv_ack.b_signature_info();
@@ -130,7 +127,7 @@ async fn perform_to1(
     let signer = devcred.get_signer().context("Error getting COSE signer")?;
     let token =
         COSESign::from_eat(eat, None, signer.as_ref()).context("Error signing new token")?;
-    log::trace!("Sending token: {:?}", token);
+    // log::trace!("Sending token: {:?}", token);
 
     // Send: ProveToRV, Receive: RVRedirect
     let prove_to_rv = messages::to1::ProveToRV::new(token);
@@ -151,7 +148,7 @@ fn get_rv_info(devcred: &dyn DeviceCredential) -> Result<Vec<RendezvousInterpret
     if rv_info.is_empty() {
         bail!("No rendezvous information found that's usable for the device");
     }
-    log::trace!("Rendezvous info: {:?}", rv_info);
+    // log::trace!("Rendezvous info: {:?}", rv_info);
     Ok(rv_info)
 }
 
@@ -173,7 +170,6 @@ async fn get_to1d(
             }
         }
     }
-    bail!("Couldn't get TO1 from any Rendezvous server!")
 }
 
 async fn get_ov_entries(client: &mut ServiceClient, num_entries: u16) -> Result<Vec<Vec<u8>>> {
@@ -238,7 +234,7 @@ async fn perform_to2(
         .get_payload_unverified()
         .context("Error parsing unverified payload")?;
 
-    log::trace!("Got an prove OV hdr payload: {:?}", prove_ov_hdr_payload);
+    // log::trace!("Got an prove OV hdr payload: {:?}", prove_ov_hdr_payload);
 
     // Verify the nonce5 value
     if &nonce5 != prove_ov_hdr_payload.get_unverified_value().nonce5() {
@@ -267,7 +263,7 @@ async fn perform_to2(
         devcred
             .verify_hmac(&ov_hdr_vec, &ov_hdr_hmac)
             .context("Error verifying ownership voucher HMAC")?;
-        log::trace!("Ownership Voucher HMAC validated");
+        // log::trace!("Ownership Voucher HMAC validated");
 
         ov_hdr_hmac.clone()
     };
@@ -307,10 +303,10 @@ async fn perform_to2(
             .context("Error serializing the OV header")?;
         OwnershipVoucher::from_parts(header, header_hmac, ov_entries)
     };
-    log::trace!(
-        "Reconstructed full ownership voucher: {:?}",
-        ownership_voucher
-    );
+    // log::trace!(
+    //     "Reconstructed full ownership voucher: {:?}",
+    //     ownership_voucher
+    // );
 
     // Get the last entry of the ownership voucher, this automatically validates everything (yay abstraction!)
     let ov_owner_entry = ownership_voucher
@@ -319,7 +315,7 @@ async fn perform_to2(
         .last()
         .context("Error validating ownership voucher")?
         .context("Last entry on ownership voucher was wrong")?;
-    log::trace!("Got owner entry: {:?}", ov_owner_entry);
+    // log::trace!("Got owner entry: {:?}", ov_owner_entry);
 
     // Now, we can finally verify the OV Header signature we got at the top!
     let owner_pubkey = ov_owner_entry
@@ -329,7 +325,7 @@ async fn perform_to2(
     let prove_ov_hdr_payload: TO2ProveOVHdrPayload = prove_ov_hdr
         .get_payload(&owner_pubkey)
         .context("Error validating ProveOVHdr signature")?;
-    log::trace!("ProveOVHdr validated with public key: {:?}", owner_pubkey);
+    // log::trace!("ProveOVHdr validated with public key: {:?}", owner_pubkey);
 
     // Perform the key derivation
     let a_key_exchange = prove_ov_hdr_payload.a_key_exchange();
@@ -366,12 +362,12 @@ async fn perform_to2(
     )
     .context("Error signing ProveDevice EAT")?;
 
-    log::trace!("Prepared prove_device_token: {:?}", prove_device_token);
+    // log::trace!("Prepared prove_device_token: {:?}", prove_device_token);
     let prove_device_msg = messages::to2::ProveDevice::new(prove_device_token);
     let setup_device: RequestResult<messages::to2::SetupDevice> =
         client.send_request(prove_device_msg, Some(new_keys)).await;
     let setup_device = setup_device.context("Error proving device")?;
-    log::trace!("Got setup_device response: {:?}", setup_device);
+    // log::trace!("Got setup_device response: {:?}", setup_device);
 
     // Send: DeviceServiceInfoReady, Receive: OwnerServiceInfoReady
     let owner_service_info_ready: RequestResult<messages::to2::OwnerServiceInfoReady> = client
@@ -379,10 +375,10 @@ async fn perform_to2(
         .await;
     let owner_service_info_ready =
         owner_service_info_ready.context("Error getting OwnerServiceInfoReady")?;
-    log::trace!(
-        "Received OwnerServiceInfoReady: {:?}",
-        owner_service_info_ready
-    );
+    // log::trace!(
+    //     "Received OwnerServiceInfoReady: {:?}",
+    //     owner_service_info_ready
+    // );
 
     // Now, the magic: performing the roundtrip! We delegated that.
     serviceinfo::perform_to2_serviceinfos(&mut client)
@@ -438,7 +434,7 @@ async fn main() -> Result<()> {
     let dc = devcred_location
         .read()
         .context("Error reading device credential")?;
-    log::trace!("Device credential: {:?}", dc);
+    // log::trace!("Device credential: {:?}", dc);
 
     if !dc.is_active() {
         log::info!("Device credential deactivated, skipping Device Onboarding");
@@ -446,37 +442,40 @@ async fn main() -> Result<()> {
     }
 
     // Get rv entries
-    let rv_info = get_rv_info(dc.as_ref());
-
-    let client_list = get_client_list(rv_info.unwrap())
-        .await
-        .context("Error getting usable rendezvous client")?;
-
-    // Get owner info
-    let to1d = get_to1d(dc.as_ref(), client_list).await?;
-
-    let to1d_payload: UnverifiedValue<TO1DataPayload> = to1d
-        .get_payload_unverified()
-        .context("Error getting the TO2 payload")?;
-    let to2_addresses = to1d_payload.get_unverified_value().to2_addresses();
-    let to2_addresses = get_to2_urls(&to2_addresses);
-    log::info!("Got TO2 addresses: {:?}", to2_addresses);
-
-    if to2_addresses.is_empty() {
-        bail!("No valid TO2 addresses received");
-    }
-
-    for to2_address in to2_addresses {
-        match perform_to2(devcred_location.borrow(), dc.as_ref(), &to2_address)
+    let rv_info = get_rv_info(dc.as_ref())?;
+    for rv_entry in rv_info {
+        let client_list = get_client_list(rv_entry)
             .await
-            .context("Error performing TO2 ownership protocol")
-        {
-            Ok(_) => break,
-            Err(e) => {
-                log::trace!("{:?} with TO2 address {}", e, to2_address);
-                continue;
+            .context("Error getting usable rendezvous client")?;
+        log::trace!("Client list: {:?}", client_list);
+
+        // Get owner info
+        let to1d = get_to1d(dc.as_ref(), client_list).await?;
+        let to1d_payload: UnverifiedValue<TO1DataPayload> = to1d
+            .get_payload_unverified()
+            .context("Error getting the TO2 payload")?;
+
+        let to2_addresses = to1d_payload.get_unverified_value().to2_addresses();
+        let to2_addresses = get_to2_urls(&to2_addresses);
+        log::info!("Got TO2 addresses: {:?}", to2_addresses);
+
+        if to2_addresses.is_empty() {
+            bail!("No valid TO2 addresses received");
+        }
+
+        for to2_address in to2_addresses {
+            match perform_to2(devcred_location.borrow(), dc.as_ref(), &to2_address)
+                .await
+                .context("Error performing TO2 ownership protocol")
+            {
+                Ok(_) => break,
+                Err(e) => {
+                    log::trace!("{:?} with TO2 address {}", e, to2_address);
+                    continue;
+                }
             }
         }
+        break;
     }
 
     log::info!("Secure Device Onboarding DONE");
