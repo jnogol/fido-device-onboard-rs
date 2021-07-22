@@ -154,22 +154,35 @@ fn get_rv_info(devcred: &dyn DeviceCredential) -> Result<Vec<RendezvousInterpret
 
 async fn get_to1d(
     devcred: &dyn DeviceCredential,
-    mut client_list: Vec<ServiceClient>,
+    client: &mut ServiceClient,
 ) -> Result<COSESign> {
-    for client in client_list.as_mut_slice() {
-        match perform_to1(devcred, client)
-            .await
-            .context("Error performing TO1")
-        {
-            Ok(to1) => {
-                return Ok(to1);
-            }
-            Err(e) => {
-                log::trace!("{} with {:?}", e, client);
-                continue;
-            }
+    // for client in client_list.as_mut_slice() {
+    //     match perform_to1(devcred, client)
+    //         .await
+    //         .context("Error performing TO1")
+    //     {
+    //         Ok(to1) => {
+    //             return Ok(to1);
+    //         }
+    //         Err(e) => {
+    //             log::trace!("{} with {:?}", e, client);
+    //             continue;
+    //         }
+    //     }
+    // }
+    // bail!("whatever")
+    match perform_to1(devcred, client)
+        .await
+        .context("Error performing TO1")
+    {
+        Ok(to1) => {
+            return Ok(to1);
         }
-    }
+        Err(e) => {
+            log::trace!("{} with {:?}", e, client);
+        }
+    }    
+    bail!("whatever")
 }
 
 async fn get_ov_entries(client: &mut ServiceClient, num_entries: u16) -> Result<Vec<Vec<u8>>> {
@@ -444,16 +457,19 @@ async fn main() -> Result<()> {
     // Get rv entries
     let rv_info = get_rv_info(dc.as_ref())?;
     for rv_entry in rv_info {
-        let client_list = get_client_list(rv_entry)
+        let mut client_list = get_client_list(rv_entry)
             .await
             .context("Error getting usable rendezvous client")?;
         log::trace!("Client list: {:?}", client_list);
 
         // Get owner info
-        let to1d = get_to1d(dc.as_ref(), client_list).await?;
-        let to1d_payload: UnverifiedValue<TO1DataPayload> = to1d
-            .get_payload_unverified()
-            .context("Error getting the TO2 payload")?;
+        let mut to1d_payload: UnverifiedValue<TO1DataPayload>;
+        for client in client_list.as_mut_slice() {
+            let to1d = get_to1d(dc.as_ref(), client).await?;
+            to1d_payload = to1d
+                .get_payload_unverified()
+                .context("Error getting the TO2 payload")?;
+        }
 
         let to2_addresses = to1d_payload.get_unverified_value().to2_addresses();
         let to2_addresses = get_to2_urls(&to2_addresses);
